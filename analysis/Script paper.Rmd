@@ -1,0 +1,341 @@
+---
+title: "Determination of Pleuronectes platessa sexual maturity phase using histology, stereology and macroscopic parameters"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	fig.align = "center"
+)
+```
+
+## Introduction
+
+  Stereological counts (quantified by the number of cells, in percentage, counted on a sampling grid covering the entire ovarian histological slide)  will allow us to link a maturity phase to each individuals (following the definitions of the ICES (WKMATCH, WKASMSF) and Brown-Peterson et al. (2011)). These phases will then be linked with the plaice's macroscopic parameters. This also allowed us to compare results found using the histological method with the more visual approach. 
+
+```{r package, echo=TRUE, message=FALSE, warning=FALSE}
+# Used Packages
+
+library(readxl)
+library(xml2)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ade4)
+library(corrplot)
+library(RColorBrewer)
+library(sizeMat)
+library(rgl)
+library(cluster)
+library(forcats)
+library(rpart)
+library(rpart.plot)
+library(car)
+library(ggpubr)
+library(gdata)
+
+```
+
+## Data
+
+Importing the data on the macroscopic parameters collected for all 151 specimens. Each categories are assigned their correct data type, and only the ventral ("V") ovaries are taken into consideration. The data type assignment is optional, but ensures that they are read correctly further down the script. These data frames are also available on the Zenodo Repository.
+
+```{r data1, echo=TRUE, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+
+plie2 <- read.csv("~/Papier M2/P_platessa_Paper/data/Macros.csv", header = TRUE, sep = ';', as.is = T)
+
+plie3 <- subset(plie2, gon_pos == "V" )
+
+plie3$age <- as.numeric(as.character(plie3$age))
+plie3$L_gon <- as.numeric(as.character(plie3$L_gon))
+plie3$L_fish <- as.numeric(as.character(plie3$L_fish))
+plie3$W_fish <- as.numeric(as.character(plie3$W_fish))
+plie3$W_gon <- as.numeric(as.character(plie3$W_gon))
+plie3$Kurtosis <- as.numeric(as.character(plie3$Kurtosis))
+plie3$Skewness <- as.numeric(as.character(plie3$Skewness))
+plie3$gon_area <- as.numeric(as.character(plie3$gon_area))
+plie3$width_gon <- as.numeric(as.character(plie3$width_gon))
+plie3$width_mid_L_gon <- as.numeric(as.character(plie3$width_mid_L_gon))
+plie3$mean_col_index <- as.numeric(as.character(plie3$mean_col_index))
+plie3$std_dev <- as.numeric(as.character(plie3$std_dev))
+plie3$modal <- as.numeric(as.character(plie3$modal))
+plie3 <- plie3 %>%mutate(month=((substr(date,4,5))))
+
+```
+
+Importing the stereological reading data of all 151 ventral ovary slides. We set up the reading data into a more organized dataframe for further analysis, as well as concatenate both histological and macroscopic data into a single dataframe.
+
+```{r data2, echo=TRUE, message=FALSE, warning=FALSE, results='hide'}
+
+stereo <- read.csv("~/Papier M2/P_platessa_Paper/data/Stereology.csv", header = TRUE, sep = ';', as.is = T)
+
+# Making sure the data is seen as characters
+stereo$num_fish <- as.character(as.numeric(stereo$num_fish))
+stereo$point_id <- as.character(as.numeric(stereo$point_id))
+stereo$coord_x <- as.character(as.numeric(stereo$coord_x))
+stereo$coord_y <- as.character(as.numeric(stereo$coord_y))
+
+stereo_V2 <- stereo%>%filter(reading == 'median')
+
+stereoA <- stereo_V2 %>% group_by(cell_type, fish_id) %>% summarise(hit_points= n())
+stereoB <- stereoA %>% spread(key = "cell_type", value = hit_points) 
+stereoB[is.na(stereoB)] <- 0
+
+# Computation of each cellular type count (%)
+stereoC <- (stereoB[,2:21]*100)/(rowSums(stereoB[,2:21]))
+stereoC <- cbind(stereoC, stereoB$fish_id)%>% rename(fish_id = `stereoB$fish_id`)
+
+# Dataframe with Stereological counts and macroscopic parameters
+plie <- left_join(plie3,stereoC, by = c("fish_id" = "fish_id"))
+
+```
+
+### Histological structures
+
+20 cellular structures have been identified throughout the 151 sampled ovarian slides :
+
+- **ov**: oogonium
+- **op1**: premature stage 1 oocyte
+- **op2**: premature stage 2 oocyte
+- **oca**: cortical alveoli oocyte
+- **vit1**: oocyte in early vitellogenesis
+- **vit2**: oocyte in vitellogenesis with nucleus migration
+- **vit3**: oocyte in vitellogenesis with zona pellucida growth
+- **vit4**: oocyte at the end of vitellogenesis
+- **och**: oocyte in hydration
+- **oh**: hydrated oocyte
+- **POF**: post-Ovulatory Follicle
+- **oaA**: oocyte in alpha atresia
+- **oaB**: oocyte in beta atresia
+- **L**: lysis
+- **ei**: intercellular space
+- **i**: undetermined
+- **pg**: gonadal wall
+- **tc**: connective tissue
+- **v**: unatural emptiness
+- **cs**: blood vessel
+
+### Macroscopic parameters
+
+List of measured parameters :
+
+- **L_fish**: total lengh of fish (cm)
+- **W_fish**: ungetted weight of fish (g)
+- **mat_estim**: visually estimated maturity phase
+- **age**: fish age (year)
+- **W_gon**: weight of the ovary (g)
+- **gon_area**: surface area of the ovary (mm²)
+- **L_gon**: length of the ovary (mm)
+- **Width_gon**: width of the ovary (mm)
+- **Width_mid_L_gon**: max width at mid-length of the ovary (mm)
+- **mean_col_index**: mean color of the ovary (index between 0 and 360)
+- **modal**: median color of the ovary (index between 0 and 360)
+
+
+Computation of the last parameters
+
+- **rap**: ratio between the ovary's length and the fish's total length
+- **rapgon**: ratio between the ovary's weight and its length
+- **rapgonw**: ratio between the ovary's weight and the fish's ungutter weight (gonado-somatic index)
+
+```{r data4, echo= TRUE}
+
+#Dataframe without fish with missing macroscopic parameters (expected 146 obs)
+plieh <-plie%>%select(num_fish,gon_pos, date, month, L_fish, W_fish, mat_estim, ov,op1,op2,oca,vit1,vit2,vit3,vit4,och,oh,POF,L,oaA,oaB,pg,tc,cs,ei,v,i,
+		   age, W_gon, gon_area, L_gon, width_gon, width_mid_L_gon, mean_col_index, std_dev, modal)%>% na.omit()%>%mutate(
+	       rap=L_gon/10/L_fish,
+			   rapgon=W_gon/L_gon,
+			   rapgonw=W_gon/W_fish)
+
+# Complete dataframe with all stereologial readings (expected 151 obs)
+plieH <- plie%>%select(num_fish,mat_estim,ov,op1,op2,oca,vit1,vit2,vit3,vit4,och,oh,POF,L,oaA,oaB,pg,tc,cs,ei,v,i,age,date,month)%>%
+	na.omit()
+
+```
+
+## Manual determination of the maturity phases
+
+Following the ICES and Brown-Peterson et al. (2011) definitions, the stereological counts were used to classify each individual into a maturity phase. For this process, only the phases A, B, C and E were established, with all remaining slides being automatically put into the D (Regressing/Regenerating) phase.
+
+```{r, data5}
+
+matmodel<-plieH
+
+matmodel$matphase<-"unknown"
+
+```
+
+### Immature - A
+
+Individuals classified into the Immature phase have the following histological criteria:
+
+- a count of **ov**, **op1** or **op2** that is not null
+- absence of **POF**, **oca**, **vit1**, **vit2**, **vit3**, **vit4**, **och** and **oh**
+
+```{r, message=FALSE, warning=FALSE}
+
+matmodel$matphase[(matmodel$ov>0 | matmodel$op1>0 | matmodel$op2>0) & matmodel$POF==0 & matmodel$oca==0 & matmodel$vit1==0 & matmodel$vit2==0 & matmodel$vit3==0 & matmodel$vit4==0 & matmodel$och==0 & matmodel$oh==0]<-"A"
+
+```
+
+### Developping - B
+
+Individuals classified into the Developping phase have the following histological criteria:
+
+- presence of either **oca**, **vit1**, **vit2** or **vit3**
+- a count of **oaA** of less than or equal to 50% of the total follicles quantified
+- absence of **POF**, **oaB**, **vit4**,  **och** and **oh**
+
+```{r, message=FALSE, warning=FALSE}
+
+cells<-matmodel$ov+matmodel$op1+matmodel$op2+matmodel$POF+matmodel$oca+matmodel$vit1+matmodel$vit2+matmodel$vit3+matmodel$vit4+matmodel$och+matmodel$oh+matmodel$oaB
+
+matmodel$matphase[(matmodel$oca>0 | matmodel$vit1>0 | matmodel$vit2>0 | matmodel$vit3>0) & matmodel$POF==0 & matmodel$oaB==0 & matmodel$vit4==0 & matmodel$och==0 & matmodel$oh==0 & cells>=matmodel$oaA] <-"B"
+
+
+```
+
+### Spawning - C
+
+Individuals classified into the Spawning phase have the following histological criteria:
+
+- absence of **POF** and of **oaB**
+- presence of either **vit4**, **och** or **oh**
+- a count of **oaA** of less than or equal to 50% of the total follicles quantified
+
+```{r, message=FALSE, warning=FALSE}
+
+matmodel$matphase[( matmodel$vit4>0 | matmodel$och>0 | matmodel$oh>0) & matmodel$POF==0 & cells>=matmodel$oaA & matmodel$oaB==0]<-"C"
+
+```
+
+- absence of **oaB**
+- presence of either **vit4**, **och** or **oh**
+- a count of **oaA** of less than or equal to 50% of the total follicles quantified
+- presence of **POF** that does not exceed the number of **oh**
+
+```{r, message=FALSE, warning=FALSE}
+
+matmodel$matphase[( matmodel$vit4>0 | matmodel$och>0 | matmodel$oh>0) & matmodel$POF<matmodel$oh & cells>=matmodel$oaA & matmodel$oaB==0]<-"C"
+
+```
+
+### Omitted Spawning - E
+
+Individuals classified into the Omitted Spawning phase have the following histological criteria:
+
+- a count of **oaA** of more than 50% of the total oocytes quantified
+- absence of **POF**
+
+```{r, message=FALSE, warning=FALSE}
+
+matmodel$matphase[matmodel$POF==0 & cells<matmodel$oaA]<-"E"
+
+```
+
+### Regressing / Regenerating - D
+
+Individuals classified into the Regressing/Regenerating phase are those that have not been classified into the other phases. 
+
+```{r}
+
+plieD<-matmodel[grepl("unknown", matmodel$matphase),]
+plieD$matphase <- "D"
+
+```
+
+## Confusion matrix
+
+Combining the histologically determined maturity phases with the rest of the data.
+
+```{r, data6}
+
+stadeD<-plieD%>%transmute(num_fish,matphase)
+stadeABCE<-matmodel%>%transmute(num_fish,matphase)%>%filter(matphase%in%c("A","B", "C","D", "E"))
+stadeAll<-rbind(stadeD,stadeABCE)
+
+macroHQCname<-c("mat_estim","month","ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i","num_fish","L_fish","W_fish","age")
+tabmacroHQC0 <-full_join(stadeAll,plie[,names(plie)%in%macroHQCname])
+
+
+```
+
+Table 1 : Table crossing the number of individuals classified visually (1, 2A, 2B, 3A, 4, 4A, 4B) with those same individuals classified with the stereological method (A, B, C, D, E).
+
+```{r table1}
+
+table(tabmacroHQC0$matphase,tabmacroHQC0$mat_estim) 
+
+```
+
+Dataframe with only the fish with no missing macroscopic parameters (n=146)
+
+```{r data7, message=FALSE, warning=FALSE}
+
+Names<-c("month","num_fish","L_fish","W_fish","age","W_gon","gon_area","L_gon","width_gon","width_mid_L_gon","mean_col_index","modal","rap","rapgon","rapgonw","ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")
+
+tabmacroHQC <-full_join(stadeAll,plieh[,names(plieh)%in%Names])
+tabmacroHQC <- tabmacroHQC[!is.na(tabmacroHQC$L_fish),]
+
+```
+
+## Decision trees
+
+Plot 1: Decision tree with the maximum amount of data collected
+
+```{r plot1}
+
+rtreeLab<-rpart(matphase~month+L_fish+W_fish+age+W_gon+gon_area+L_gon+width_gon+width_mid_L_gon+mean_col_index+modal+rap+rapgon+rapgonw,data=tabmacroHQC, control = rpart.control(minsplit = 5, cp = 0))
+prp(rtreeLab, extra = 1)
+
+printcp(rtreeLab)
+
+```
+
+Plot 2: Decision tree with the minimum data that can be taken when on a boat (no gonad weight)
+
+```{r plot2}
+
+rtreeBato<-rpart(matphase~month+L_fish+W_fish+age+L_gon+width_gon+width_mid_L_gon+rap,data=tabmacroHQC, control = rpart.control(minsplit = 5, cp = 0))
+prp(rtreeBato, extra = 1)
+
+printcp(rtreeBato)
+
+```
+
+## Maturity Ogive and L50
+
+```{r data8, message=FALSE, warning=FALSE}
+
+dat_ogive <- tabmacroHQC0
+dat_ogive$L_fish<-as.numeric(as.character(dat_ogive$L_fish))
+
+```
+
+plot 3 : Maturity ogive and L50 determined with visually estimated maturity
+
+```{r plot3}
+
+gonad_mat1<-gonad_mature(dat_ogive,varNames=c("L_fish","mat_estim"),inmName=c("1", "2A"),
+			matName=c("2B","3A","4","4A","4B"),method="fq",niter=800)
+print(gonad_mat1)
+plot(gonad_mat1)
+
+```
+
+plot 4 : Maturity ogive and L50 determined with stereologically estimated maturity
+
+```{r plot4}
+
+#maturity ogive for objective mat 
+gonad_mat2<-gonad_mature(dat_ogive,varNames=c("L_fish","matphase"),inmName=c("A"),
+			matName=c("B","C","D"),method="fq",niter=800)
+print(gonad_mat2)
+plot(gonad_mat2)
+
+```
