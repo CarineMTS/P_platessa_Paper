@@ -14,12 +14,9 @@ knitr::opts_chunk$set(
 )
 ```
 
-## Introduction
-
-  Stereological counts (quantified by the number of cells, in percentage, counted on a sampling grid covering the entire ovarian histological slide)  will allow us to link a maturity phase to each individuals (following the definitions of the ICES (WKMATCH, WKASMSF) and Brown-Peterson et al. (2011)). These phases will then be linked with the plaice's macroscopic parameters. This also allowed us to compare results found using the histological method with the more visual approach. 
+##  Used Packages
 
 ```{r package, echo=TRUE, message=FALSE, warning=FALSE}
-# Used Packages
 
 library(readxl)
 library(xml2)
@@ -95,55 +92,9 @@ plie <- left_join(plie3,stereoC, by = c("fish_id" = "fish_id"))
 
 ```
 
-### Histological structures
+Computation of the last parameters (**rap**, **rapgon** and **rapgonw**)
 
-20 cellular structures have been identified throughout the 151 sampled ovarian slides :
-
-- **ov**: oogonium
-- **op1**: premature stage 1 oocyte
-- **op2**: premature stage 2 oocyte
-- **oca**: cortical alveoli oocyte
-- **vit1**: oocyte in early vitellogenesis
-- **vit2**: oocyte in vitellogenesis with nucleus migration
-- **vit3**: oocyte in vitellogenesis with zona pellucida growth
-- **vit4**: oocyte at the end of vitellogenesis
-- **och**: oocyte in hydration
-- **oh**: hydrated oocyte
-- **POF**: post-Ovulatory Follicle
-- **oaA**: oocyte in alpha atresia
-- **oaB**: oocyte in beta atresia
-- **L**: lysis
-- **ei**: intercellular space
-- **i**: undetermined
-- **pg**: gonadal wall
-- **tc**: connective tissue
-- **v**: unatural emptiness
-- **cs**: blood vessel
-
-### Macroscopic parameters
-
-List of measured parameters :
-
-- **L_fish**: total lengh of fish (cm)
-- **W_fish**: ungetted weight of fish (g)
-- **mat_estim**: visually estimated maturity phase
-- **age**: fish age (year)
-- **W_gon**: weight of the ovary (g)
-- **gon_area**: surface area of the ovary (mm²)
-- **L_gon**: length of the ovary (mm)
-- **Width_gon**: width of the ovary (mm)
-- **Width_mid_L_gon**: max width at mid-length of the ovary (mm)
-- **mean_col_index**: mean color of the ovary (index between 0 and 360)
-- **modal**: median color of the ovary (index between 0 and 360)
-
-
-Computation of the last parameters
-
-- **rap**: ratio between the ovary's length and the fish's total length
-- **rapgon**: ratio between the ovary's weight and its length
-- **rapgonw**: ratio between the ovary's weight and the fish's ungutter weight (gonado-somatic index)
-
-```{r data4, echo= TRUE}
+```{r data3, echo= TRUE}
 
 #Dataframe without fish with missing macroscopic parameters (expected 146 obs)
 plieh <-plie%>%select(num_fish,gon_pos, date, month, L_fish, W_fish, mat_estim, ov,op1,op2,oca,vit1,vit2,vit3,vit4,och,oh,POF,L,oaA,oaB,pg,tc,cs,ei,v,i,
@@ -162,7 +113,7 @@ plieH <- plie%>%select(num_fish,mat_estim,ov,op1,op2,oca,vit1,vit2,vit3,vit4,och
 
 Following the ICES and Brown-Peterson et al. (2011) definitions, the stereological counts were used to classify each individual into a maturity phase. For this process, only the phases A, B, C and E were established, with all remaining slides being automatically put into the D (Regressing/Regenerating) phase.
 
-```{r, data5}
+```{r, data4}
 
 matmodel<-plieH
 
@@ -196,7 +147,6 @@ Individuals classified into the Developping phase have the following histologica
 cells<-matmodel$ov+matmodel$op1+matmodel$op2+matmodel$POF+matmodel$oca+matmodel$vit1+matmodel$vit2+matmodel$vit3+matmodel$vit4+matmodel$och+matmodel$oh+matmodel$oaB
 
 matmodel$matphase[(matmodel$oca>0 | matmodel$vit1>0 | matmodel$vit2>0 | matmodel$vit3>0) & matmodel$POF==0 & matmodel$oaB==0 & matmodel$vit4==0 & matmodel$och==0 & matmodel$oh==0 & cells>=matmodel$oaA] <-"B"
-
 
 ```
 
@@ -253,7 +203,7 @@ plieD$matphase <- "D"
 
 Combining the histologically determined maturity phases with the rest of the data.
 
-```{r, data6}
+```{r, data5}
 
 stadeD<-plieD%>%transmute(num_fish,matphase)
 stadeABCE<-matmodel%>%transmute(num_fish,matphase)%>%filter(matphase%in%c("A","B", "C","D", "E"))
@@ -275,7 +225,7 @@ table(tabmacroHQC0$matphase,tabmacroHQC0$mat_estim)
 
 Dataframe with only the fish with no missing macroscopic parameters (n=146)
 
-```{r data7, message=FALSE, warning=FALSE}
+```{r data6, message=FALSE, warning=FALSE}
 
 Names<-c("month","num_fish","L_fish","W_fish","age","W_gon","gon_area","L_gon","width_gon","width_mid_L_gon","mean_col_index","modal","rap","rapgon","rapgonw","ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")
 
@@ -310,7 +260,7 @@ printcp(rtreeBato)
 
 ## Maturity Ogive and L50
 
-```{r data8, message=FALSE, warning=FALSE}
+```{r data7, message=FALSE, warning=FALSE}
 
 dat_ogive <- tabmacroHQC0
 dat_ogive$L_fish<-as.numeric(as.character(dat_ogive$L_fish))
