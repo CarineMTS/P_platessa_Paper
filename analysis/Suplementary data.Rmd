@@ -1,0 +1,2497 @@
+---
+title: "Inter-agent calibration excercise and cellular gonad homogeneity"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	fig.align = "center"
+)
+```
+
+## Used packages
+
+```{r package, echo=TRUE, message=FALSE, warning=FALSE}
+# Used packages
+
+library("xml2")
+library("irr")
+library("readxl")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
+library("ade4")
+library("factoextra")
+
+```
+
+## Inter-agent calibration
+
+  The dataframe **Interagent** summarizes the readings of the 20 histological slides.
+
+```{r data1,echo=TRUE}
+
+inter<-read.csv("~/Papier M2/P_platessa_Paper/data/Interagent.csv", header = TRUE, sep = ';')
+
+inter$total_points <- as.numeric(as.character(inter$total_points))
+inter$hit_points <- as.numeric(as.character(inter$hit_points))
+inter$fract_estim <- as.numeric(as.character(inter$fract_estim))
+
+```
+
+### I. First reading
+
+For all 20 slides read by 2 agents, 15 have been read by 3 agents
+
+Plot 1: Results of the first reading exercise, for 20 slides by 2 or 3 agents
+
+```{r plot1, echo=TRUE, fig.height = 8, fig.width = 16, fig.align = "center"}
+
+inter1 <- inter %>% filter(reading == 1)
+
+ggplot(data=inter1, aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~num_fish)+
+  ylab("Structure count") +
+  theme(axis.text.x = element_text(size=9, angle = 90)) +
+  scale_fill_discrete(name="Agent")
+
+```
+
+### II. Second reading
+
+Plot 2 : Results of the second reading, of the same 20 slides, for all reading agents
+
+```{r plot2, echo=TRUE, fig.height = 8, fig.width = 16, fig.align = "center"}
+
+inter2 <- inter %>% filter(reading == 2)
+
+ggplot(data=inter2, aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~num_fish)+
+  ylab("Structure count") +
+  theme(axis.text.x = element_text(size=9, angle = 90)) +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Daframe with the reading results and their x and y coordinates
+
+```{r data2, echo=TRUE}
+
+stereo <- read.csv("~/Papier M2/P_platessa_Paper/data/Stereology.csv", header = TRUE, sep = ';', as.is = T)
+
+# Making sure the data is seen as characters
+stereo$num_fish <- as.character(as.numeric(stereo$num_fish))
+stereo$point_id <- as.character(as.numeric(stereo$point_id))
+stereo$coord_x <- as.character(as.numeric(stereo$coord_x))
+stereo$coord_y <- as.character(as.numeric(stereo$coord_y))
+
+stereo3 <- stereo%>%filter(reading == 'calib_reading')
+
+```
+
+#### Comparing the reading results for all 20 slides 
+
+##### 1. Slide P 230117 7D 22 88 F1
+
+Plot3 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot3, echo=TRUE}
+
+stereo3_40 <- stereo3 %>% filter(num_fish=="40")
+inter_40 <- inter %>% filter(num_fish == "40")
+
+ggplot(data = inter_40 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+- minsurf **%** : minimum value, for the counted cellular structure (%), found between the 3 reading agents
+- maxsurf **%** : maximum value, for the counted cellular structure (%), found between the 3 reading agents
+- diffperc **%** : diffrence between the min (**minsurf**) and the max (**maxsurf**) values 
+- sdperc **%** : standard deviation for the min and max values found between the reading agents
+- meanperc **%** : mean of the min and max values found between the reading agents
+- CV **%** : Coefficient of Variation, no unit, expressed in %.
+- medianeperc **%** : median value (%) of the counted cellular structures
+- madperc **%** : Mean Absolute Deviation of the counted cellular structures (%). 
+
+```{r , echo=TRUE}
+
+inter_40 <- inter_40 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+# To validate a reading: need to have a difference of less than 3% between the highest and lowest values, for a single cellular structure inside a single slide
+
+inter_40 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers. Test **agree** works for 3 readers.
+Computation of the **kappam.fleiss** agreement. This test workd for n readers.
+
+```{r , echo=TRUE}
+
+slide40<-stereo3_40%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide40<-tidyr::spread(slide40,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide40)
+
+kappam.fleiss(slide40)
+
+```
+
+##### 2. Slide P 230117 7D 21 80 F1
+
+Plot4 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot4, echo=TRUE}
+
+stereo3_39 <- stereo3 %>% filter(num_fish=="39")
+inter_39 <- inter %>% filter(num_fish == "39")
+
+ggplot(data = inter_39 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_39 <- inter_39 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_39 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide39<-stereo3_39%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide39<-tidyr::spread(slide39,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide39)
+
+kappam.fleiss(slide39)
+
+```
+
+One agent did not have the same sampling grid for the stereological reading. Without taking into account the reading with the different sampling grid, the **kappa Fleiss** for the second reading only is : 
+
+```{r , echo=TRUE}
+
+kappam.fleiss(slide39[,-1])
+
+```
+
+##### 3. Slide P 230117 7D 19 72 F1
+
+Plot5 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot5, echo=TRUE}
+
+stereo3_37 <- stereo3 %>% filter(num_fish=="37")
+inter_37 <- inter %>% filter(num_fish == "37")
+
+ggplot(data = inter_37 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_37 <- inter_37 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_37 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide37<-stereo3_37%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide37<-tidyr::spread(slide37,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide37)
+
+kappam.fleiss(slide37)
+
+```
+
+##### 4. Slide P 220117 7D 23 116 F1
+
+Plot6 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot6, echo=TRUE}
+
+stereo3_29 <- stereo3 %>% filter(num_fish=="29")
+inter_29 <- inter %>% filter(num_fish == "29")
+
+ggplot(data = inter_29 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_29 <- inter_29 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_29 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide29<-stereo3_29%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide29<-tidyr::spread(slide29,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide29)
+
+kappam.fleiss(slide29)
+
+```
+
+One agent did not have the same sampling grid for the stereological reading. Without taking into account the reading with the different sampling grid, the **kappa Fleiss** for the second reading only is :  
+
+```{r , echo=TRUE}
+
+kappam.fleiss(slide29[,-3])
+
+```
+##### 5. Slide 	P 210117 7D 23 130 F1
+
+Plot7 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot7, echo=TRUE}
+
+stereo3_25 <- stereo3 %>% filter(num_fish=="25")
+inter_25 <- inter %>% filter(num_fish == "25")
+
+ggplot(data = inter_25 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_25 <- inter_25 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_25 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide25<-stereo3_25%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide25<-tidyr::spread(slide25,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide25)
+
+kappam.fleiss(slide25)
+
+```
+
+##### 6. Slide P 110618 7D 31 297 F2A V2
+
+Plot8 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot8, echo=TRUE}
+
+stereo3_69 <- stereo3 %>% filter(num_fish=="69")
+inter_69 <- inter %>% filter(num_fish == "69")
+
+ggplot(data = inter_69 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_69 <- inter_69 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_69 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide69<-stereo3_69%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide69<-tidyr::spread(slide69,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide69)
+
+kappam.fleiss(slide69)
+
+```
+
+##### 7. Slide P 110618 7D 30 257 F4 V2
+
+Plot9 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot9, echo=TRUE}
+
+stereo3_67 <- stereo3 %>% filter(num_fish=="67")
+inter_67 <- inter %>% filter(num_fish == "67")
+
+ggplot(data = inter_67 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_67 <- inter_67 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_67 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide67<-stereo3_67%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide67<-tidyr::spread(slide67,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide67)
+
+kappam.fleiss(slide67)
+
+```
+
+##### 8. Slide P 110618 7D 30 243 F2A V2
+
+Plot10 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot10, echo=TRUE}
+
+stereo3_66 <- stereo3 %>% filter(num_fish=="66")
+inter_66 <- inter %>% filter(num_fish == "66")
+
+ggplot(data = inter_66 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_66 <- inter_66 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_66 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide66<-stereo3_66%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide66<-tidyr::spread(slide66,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide66)
+
+kappam.fleiss(slide66)
+
+```
+
+##### 9. Slide P 110618 7D 29 237 F4 V2
+
+Plot11 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot11, echo=TRUE}
+
+stereo3_65 <- stereo3 %>% filter(num_fish=="65")
+inter_65 <- inter %>% filter(num_fish == "65")
+
+ggplot(data = inter_65 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_65 <- inter_65 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_65 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide65<-stereo3_65%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide65<-tidyr::spread(slide65,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide65)
+
+kappam.fleiss(slide65)
+
+```
+
+##### 10. Slide P 110618 7D 28 249 F2A V2
+
+Plot12 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot12, echo=TRUE}
+
+stereo3_64 <- stereo3 %>% filter(num_fish=="64")
+inter_64 <- inter %>% filter(num_fish == "64")
+
+ggplot(data = inter_64 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_64 <- inter_64 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_64 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide64<-stereo3_64%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide64<-tidyr::spread(slide64,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide64)
+
+kappam.fleiss(slide64)
+
+```
+
+##### 11. Slide P 110618 7D 28 247 F4 V2
+
+Plot13 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot13, echo=TRUE}
+
+stereo3_63 <- stereo3 %>% filter(num_fish=="63")
+inter_63 <- inter %>% filter(num_fish == "63")
+
+ggplot(data = inter_63 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_63 <- inter_63 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_63 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide63<-stereo3_63%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide63<-tidyr::spread(slide63,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide63)
+
+kappam.fleiss(slide63)
+
+```
+
+One agent did not have the same sampling grid for the stereological reading. Without taking into account the reading with the different sampling grid, the **kappa Fleiss** for the second reading only is : 
+
+```{r , echo=TRUE}
+
+kappam.fleiss(slide63[,-1])
+
+```
+
+##### 12. Slide P 110618 7D 28 227 F2A V2
+
+Plot14 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot14, echo=TRUE}
+
+stereo3_62 <- stereo3 %>% filter(num_fish=="62")
+inter_62 <- inter %>% filter(num_fish == "62")
+
+ggplot(data = inter_62 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_62 <- inter_62 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_62 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide62<-stereo3_62%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide62<-tidyr::spread(slide62,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide62)
+
+kappam.fleiss(slide62)
+
+```
+
+##### 13. Slide P 110618 7D 27 225 F4 V2
+
+Plot15 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot15, echo=TRUE}
+
+stereo3_61 <- stereo3 %>% filter(num_fish=="61")
+inter_61 <- inter %>% filter(num_fish == "61")
+
+ggplot(data = inter_61 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_61 <- inter_61 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_61 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide61<-stereo3_61%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide61<-tidyr::spread(slide61,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide61)
+
+kappam.fleiss(slide61)
+
+```
+
+##### 14. Slide P 110618 7D 27 215 F4 V2
+
+Plot16 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot16, echo=TRUE}
+
+stereo3_60 <- stereo3 %>% filter(num_fish=="60")
+inter_60 <- inter %>% filter(num_fish == "60")
+
+ggplot(data = inter_60 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_60 <- inter_60 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_60 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide60<-stereo3_60%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide60<-tidyr::spread(slide60,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide60)
+
+kappam.fleiss(slide60)
+
+```
+
+##### 15. Slide P 110618 7D 27 206 F2A V2
+
+Plot17 : Counted cellular structure values (%) by 3 agents, for the first and second readings
+
+```{r plot17, echo=TRUE}
+
+stereo3_59 <- stereo3 %>% filter(num_fish=="59")
+inter_59 <- inter %>% filter(num_fish == "59")
+
+ggplot(data = inter_59 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 3 readers
+
+```{r , echo=TRUE}
+
+inter_59 <- inter_59 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_59 %>% filter(diffperc > 3)
+
+```
+
+Computation of the percentage agreement (**agree**) between the 3 readers.
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide59<-stereo3_59%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide59<-tidyr::spread(slide59,agent,cell_type)%>%select(-point_id,-num_fish)
+
+agree(slide59)
+
+kappam.fleiss(slide59)
+
+```
+
+##### 16. Slide P 150318 7D 36 523 F4 V2
+
+Plot18 : Counted cellular structure values (%) by 2 agents, for the first and second readings
+
+```{r plot18, echo=TRUE}
+
+stereo3_58 <- stereo3 %>% filter(num_fish=="58")
+inter_58 <- inter %>% filter(num_fish == "58")
+
+ggplot(data = inter_58 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 2 readers
+
+```{r , echo=TRUE}
+
+inter_58 <- inter_58 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_58 %>% filter(diffperc > 3)
+
+```
+
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide58<-stereo3_58%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide58<-tidyr::spread(slide58,agent,cell_type)%>%select(-point_id,-num_fish)
+
+kappam.fleiss(slide58)
+
+```
+
+##### 17. Slide P 150318 7D 31 287 F4 V2
+
+Plot19 : Counted cellular structure values (%) by 2 agents, for the first and second readings
+
+```{r plot19, echo=TRUE}
+
+stereo3_54 <- stereo3 %>% filter(num_fish=="54")
+inter_54 <- inter %>% filter(num_fish == "54")
+
+ggplot(data = inter_54 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 2 readers
+
+```{r , echo=TRUE}
+
+inter_54 <- inter_54 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_54 %>% filter(diffperc > 3)
+
+```
+
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide54<-stereo3_54%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide54<-tidyr::spread(slide54,agent,cell_type)%>%select(-point_id,-num_fish)
+
+kappam.fleiss(slide54)
+
+```
+
+##### 18. Slide P 150318 7D 30 302 F4 V2
+
+Plot20 : Counted cellular structure values (%) by 2 agents, for the first and second readings
+
+```{r plot20, echo=TRUE}
+
+stereo3_53 <- stereo3 %>% filter(num_fish=="53")
+inter_53 <- inter %>% filter(num_fish == "53")
+
+ggplot(data = inter_53 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 2 readers
+
+```{r , echo=TRUE}
+
+inter_53 <- inter_53 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_53 %>% filter(diffperc > 3)
+
+```
+
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide53<-stereo3_53%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide53<-tidyr::spread(slide53,agent,cell_type)%>%select(-point_id,-num_fish)
+
+kappam.fleiss(slide53)
+
+```
+
+##### 19. Slide P 150318 7D 30 271 F4 V2
+
+Plot21 : Counted cellular structure values (%) by 2 agents, for the first and second readings
+
+```{r plot21, echo=TRUE}
+
+stereo3_52 <- stereo3 %>% filter(num_fish=="52")
+inter_52 <- inter %>% filter(num_fish == "52")
+
+ggplot(data = inter_52 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 2 readers
+
+```{r , echo=TRUE}
+
+inter_52 <- inter_52 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_52 %>% filter(diffperc > 3)
+
+```
+
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide52<-stereo3_52%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide52<-tidyr::spread(slide52,agent,cell_type)%>%select(-point_id,-num_fish)
+
+kappam.fleiss(slide52)
+
+```
+
+##### 20. Slide P 150318 7D 29 282 F2A V2	
+
+Plot22 : Counted cellular structure values (%) by 2 agents, for the first and second readings
+
+```{r plot22, echo=TRUE}
+
+stereo3_51 <- stereo3 %>% filter(num_fish=="51")
+inter_51 <- inter %>% filter(num_fish == "51")
+
+ggplot(data = inter_51 ,aes(x=factor(cell_type, level = c("ov","op1","op2","oca","vit1","vit2","vit3","vit4","och","oh","POF","L","oaA","oaB","pg","tc","cs","ei","v","i")), y=fract_estim, fill=agent)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~reading) +
+  ylab("Structure count") +
+  scale_fill_discrete(name="Agent")
+
+```
+
+Stats on the counted surface values found by 2 readers
+
+```{r , echo=TRUE}
+
+inter_51 <- inter_51 %>% group_by(reading,cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+           maxsurf= max(fract_estim,na.rm=T),
+           diffperc=maxsurf-minsurf,
+           sdperc=sd(fract_estim,na.rm=T),
+           meanperc=mean(fract_estim,na.rm=T),
+           CV=sdperc/meanperc*100,
+           medianperc=median(fract_estim,na.rm=T),
+           madperc=mad(fract_estim,na.rm=T))
+
+inter_51 %>% filter(diffperc > 3)
+
+```
+
+Computation of the **kappam.fleiss** agreement.
+
+```{r , echo=TRUE}
+
+slide51<-stereo3_51%>% group_by(point_id,num_fish,agent)%>%dplyr::summarise(cell_type=first(cell_type))%>%ungroup()
+slide51<-tidyr::spread(slide51,agent,cell_type)%>%select(-point_id,-num_fish)
+
+kappam.fleiss(slide51)
+
+```
+
+Mean (and standard deviation) of the **kappa Fleiss** agreement index for all readings
+
+```{r, echo = TRUE}
+
+kf <- c(0.745,0.737,0.798,0.799,0.777,0.673,0.852,0.882,0.791,0.89,0.764,0.829,0.719,0.866,0.836,0.82,0.81,0.849,0.827,0.837)
+
+mean(kf)
+sd(kf)
+
+```
+
+### III. Slide cellular homogeneity
+
+Plot of the 6 slides of 15 fish (specimens), with the mean cellular count (%) difference for each cellular structure found trhoughout the 6 slides. 
+
+#### a. Difference in structure counts
+
+```{r data3, }
+
+stereo6 <- stereo%>%filter(reading == 'homogeneity')
+
+stereoE <- stereo6 %>% group_by(num_fish,scan_id,cell_type) %>% summarise(hit_points= n())
+stereoF <- stereoE %>% spread(key = "cell_type", value = hit_points) 
+stereoF[is.na(stereoF)] <- 0
+stereoE <- stereoF %>% gather(key = "cell_type", value = "hit_points",cs,ei,i,L,oaA,oaB,oca,op1,op2,ov,pg,POF,tc,v,vit1,vit2,vit3)
+
+# Computation of each cellular type count (%)
+stereoG <- (stereoF[,3:19]*100)/(rowSums(stereoF[,3:19]))
+stereoH <- cbind(stereoG, stereoF$scan_id, stereoF$num_fish)%>% rename(scan_id = `stereoF$scan_id`)%>%rename(num_fish = `stereoF$num_fish`)
+
+```
+
+##### 1. Specimen 110618 7D 27 206 F2A
+
+```{r, echo=TRUE}
+
+stereo6_59 <- stereoH %>% filter(num_fish=="59")
+
+stereo6_59 <- stereo6_59 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 23 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot23, echo=TRUE}
+
+ggplot(data = stereo6_59, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_59_diff <- stereo6_59 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_59_diff
+
+```
+
+##### 2. Specimen 110618 7D 27 215 F4
+
+```{r, echo=TRUE}
+
+stereo6_60 <- stereoH %>% filter(num_fish=="60")
+
+stereo6_60 <- stereo6_60 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 24 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot24, echo=TRUE}
+
+ggplot(data = stereo6_60, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_60_diff <- stereo6_60 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_60_diff
+
+```
+
+##### 3. Specimen 110618 7D 27 225 F4
+
+```{r, echo=TRUE}
+
+stereo6_61 <- stereoH %>% filter(num_fish=="61")
+
+stereo6_61 <- stereo6_61 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 25 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot25, echo=TRUE}
+
+ggplot(data = stereo6_61, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_61_diff <- stereo6_61 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_61_diff
+
+```
+
+##### 4. Specimen 110618 7D 28 227 F2A
+
+```{r, echo=TRUE}
+
+stereo6_62 <- stereoH %>% filter(num_fish=="62")
+
+stereo6_62 <- stereo6_62 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 26 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot26, echo=TRUE}
+
+ggplot(data = stereo6_62, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_62_diff <- stereo6_62 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_62_diff
+
+```
+
+##### 5. Specimen 110618 7D 28 247 F4
+
+```{r, echo=TRUE}
+
+stereo6_63 <- stereoH %>% filter(num_fish=="63")
+
+stereo6_63 <- stereo6_63 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 27 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot27, echo=TRUE}
+
+ggplot(data = stereo6_63, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_63_diff <- stereo6_63 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_63_diff
+
+```
+
+##### 6. Specimen 110618 7D 28 249 F2A D1
+
+```{r, echo=TRUE}
+
+stereo6_64 <- stereoH %>% filter(num_fish=="64")
+
+stereo6_64 <- stereo6_64 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 28 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot28, echo=TRUE}
+
+ggplot(data = stereo6_64, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_64_diff <- stereo6_64 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_64_diff
+
+```
+
+##### 7. Specimen 110618 7D 29 237 F4
+
+```{r, echo=TRUE}
+
+stereo6_65 <- stereoH %>% filter(num_fish=="65")
+
+stereo6_65 <- stereo6_65 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 29 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot29, echo=TRUE}
+
+ggplot(data = stereo6_65, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_65_diff <- stereo6_65 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_65_diff
+
+```
+
+##### 8. Specimen 110618 7D 30 243 F2A
+
+```{r, echo=TRUE}
+
+stereo6_66 <- stereoH %>% filter(num_fish=="66")
+
+stereo6_66 <- stereo6_66 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 30 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot30, echo=TRUE}
+
+ggplot(data = stereo6_66, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_66_diff <- stereo6_66 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_66_diff
+
+```
+
+##### 9. Specimen 110618 7D 30 257 F4
+
+```{r, echo=TRUE}
+
+stereo6_67 <- stereoH %>% filter(num_fish=="67")
+
+stereo6_67 <- stereo6_67 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 31 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot31, echo=TRUE}
+
+ggplot(data = stereo6_67, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_67_diff <- stereo6_67 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_67_diff
+
+```
+
+##### 10. Specimen 110618 7D 31 297 F2A
+
+```{r, echo=TRUE}
+
+stereo6_69 <- stereoH %>% filter(num_fish=="69")
+
+stereo6_69 <- stereo6_69 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 32 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot32, echo=TRUE}
+
+ggplot(data = stereo6_69, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_69_diff <- stereo6_69 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_69_diff
+
+```
+
+##### 11. Specimen 141118 7D 26 195 F1
+
+```{r, echo=TRUE}
+
+stereo6_83 <- stereoH %>% filter(num_fish=="83")
+
+stereo6_83 <- stereo6_83 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 33 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot33, echo=TRUE}
+
+ggplot(data = stereo6_83, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_83_diff <- stereo6_83 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_83_diff
+
+```
+
+##### 12. Specimen 141118 7D 26 197 F1
+
+```{r, echo=TRUE}
+
+stereo6_84 <- stereoH %>% filter(num_fish=="84")
+
+stereo6_84 <- stereo6_84 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 34 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot34, echo=TRUE}
+
+ggplot(data = stereo6_84, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_84_diff <- stereo6_84 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_84_diff
+
+```
+
+##### 13. Specimen 141118 7D 26 198 F1
+
+```{r, echo=TRUE}
+
+stereo6_85 <- stereoH %>% filter(num_fish=="85")
+
+stereo6_85 <- stereo6_85 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 35 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot35, echo=TRUE}
+
+ggplot(data = stereo6_85, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_85_diff <- stereo6_85 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_85_diff
+
+```
+
+##### 14. Specimen 141118 7D 28 230 F1
+
+```{r, echo=TRUE}
+
+stereo6_92 <- stereoH %>% filter(num_fish=="92")
+
+stereo6_92 <- stereo6_92 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 36 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot36, echo=TRUE}
+
+ggplot(data = stereo6_92, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_92_diff <- stereo6_92 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_92_diff
+
+```
+
+##### 15. Specimen 150318 7D 36 523 F4
+
+```{r, echo=TRUE}
+
+stereo6_58 <- stereoH %>% filter(num_fish=="58")
+
+stereo6_58 <- stereo6_58 %>% pivot_longer(c(`cs`,`ei`,`i`,`L`,`oaA`,`oaB`,`oca`,`op1`,`op2`,`ov`,`pg`,`POF`,`tc`,`v`,`vit1`,`vit2`,`vit3`), names_to = "cell_type", values_to = "fract_estim")
+
+```
+
+Plot 37 : Structure count (%) for all 6 slides of a single fish
+
+```{r plot37, echo=TRUE}
+
+ggplot(data = stereo6_58, aes(x=cell_type, y=fract_estim, fill=scan_id)) +
+  geom_bar(stat = "identity",  position=position_dodge()) +
+  xlab("Cellular structures") +
+  facet_wrap(~scan_id) +
+  ylab("Count (%)") +
+  theme(axis.text.x = element_text(size=6)) +
+  scale_fill_discrete(name="Slide section", labels=c("D1", "D2", "D3","V1", "V2", "V3"))
+
+```
+
+Diffrences found between the counted structures throughout the 6 slides of a single fish
+
+```{r, echo=TRUE}
+
+stereo6_58_diff <- stereo6_58 %>% group_by(cell_type)%>%
+  summarise(minsurf= min(fract_estim,na.rm=T),
+            maxsurf= max(fract_estim,na.rm=T),
+            diffperc=maxsurf-minsurf,
+            sdperc=sd(fract_estim,na.rm=T),
+            meanperc=mean(fract_estim,na.rm=T))
+
+stereo6_58_diff
+
+```
+
+#### b. GLM
+
+It is impossible to determine a percentage agreement (% agree or kappa Fleiss) since the reading sampling grids are different from one slide to the other. 
+
+A test to underline if these is a difference (or not) between the 6 slides for each specimen : General Linear Model (GLM), with the response variable being the number of times a cellular structure was counted (for each slide) / the total number of structures counted (for each slide). This variable will thus be a percentage, so we will use a binomial GLM.
+
+##### 1. ov
+
+```{r, echo=TRUE}
+
+dat.glmov <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "ov"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmov$cas_neg <-dat.glmov$nbtot - dat.glmov$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmov <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmov)
+
+summary(glmov)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmov, test="Chi")
+
+```
+
+##### 2. op1
+
+```{r, echo=TRUE}
+
+dat.glmop1 <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "op1"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmop1$cas_neg <-dat.glmop1$nbtot - dat.glmop1$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmop1 <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmop1)
+
+summary(glmop1)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmop1, test="Chi")
+
+```
+
+##### 3. op2
+
+```{r, echo=TRUE}
+
+dat.glmop2 <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "op2"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmop2$cas_neg <-dat.glmop2$nbtot - dat.glmop2$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmop2 <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmop2)
+
+summary(glmop2)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmop2, test="Chi")
+
+```
+
+##### 4. oca
+
+```{r, echo=TRUE}
+
+dat.glmoca <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "oca"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmoca$cas_neg <-dat.glmoca$nbtot - dat.glmoca$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmoca <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmoca)
+
+summary(glmoca)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmoca, test="Chi")
+
+```
+
+##### 5. vit1
+
+```{r, echo=TRUE}
+
+dat.glmvit1 <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "vit1"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmvit1$cas_neg <-dat.glmvit1$nbtot - dat.glmvit1$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmvit1 <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmvit1)
+
+summary(glmvit1)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmvit1, test="Chi")
+
+```
+
+##### 6. vit2
+
+```{r, echo=TRUE}
+
+dat.glmvit2 <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "vit2"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmvit2$cas_neg <-dat.glmvit2$nbtot - dat.glmvit2$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmvit2 <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmvit2)
+
+summary(glmvit2)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmvit2, test="Chi")
+
+```
+
+##### 7. vit3
+
+```{r, echo=TRUE}
+
+dat.glmvit3 <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "vit3"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmvit3$cas_neg <-dat.glmvit3$nbtot - dat.glmvit3$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmvit3 <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmvit3)
+
+summary(glmvit3)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmvit3, test="Chi")
+
+```
+
+##### 8. L
+
+```{r, echo=TRUE}
+
+dat.glmL <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "L"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmL$cas_neg <-dat.glmL$nbtot - dat.glmL$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmL <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmL)
+
+summary(glmL)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmL, test="Chi")
+
+```
+
+##### 9. oaA
+
+```{r, echo=TRUE}
+
+dat.glmoaA <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "oaA"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmoaA$cas_neg <-dat.glmoaA$nbtot - dat.glmoaA$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmoaA <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmoaA)
+
+summary(glmoaA)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmoaA, test="Chi")
+
+```
+
+##### 10. oaB
+
+```{r, echo=TRUE}
+
+dat.glmoaB <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "oaB"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmoaB$cas_neg <-dat.glmoaB$nbtot - dat.glmoaB$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmoaB <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmoaB)
+
+summary(glmoaB)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmoaB, test="Chi")
+
+```
+
+##### 11. POF
+
+```{r, echo=TRUE}
+
+dat.glmPOF <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "POF"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmPOF$cas_neg <-dat.glmPOF$nbtot - dat.glmPOF$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmPOF <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmPOF)
+
+summary(glmPOF)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmPOF, test="Chi")
+
+```
+
+##### 12. pg
+
+```{r, echo=TRUE}
+
+dat.glmpg <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "pg"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmpg$cas_neg <-dat.glmpg$nbtot - dat.glmpg$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmpg <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmpg)
+
+summary(glmpg)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmpg, test="Chi")
+
+```
+
+##### 13. tc
+
+```{r, echo=TRUE}
+
+dat.glmtc <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "tc"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmtc$cas_neg <-dat.glmtc$nbtot - dat.glmtc$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmtc <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmtc)
+
+summary(glmtc)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmtc, test="Chi")
+
+```
+
+##### 14. cs
+
+```{r, echo=TRUE}
+
+dat.glmcs <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "cs"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmcs$cas_neg <-dat.glmcs$nbtot - dat.glmcs$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmcs <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmcs)
+
+summary(glmcs)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmcs, test="Chi")
+
+```
+
+##### 15. ei
+
+```{r, echo=TRUE}
+
+dat.glmei <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "ei"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmei$cas_neg <-dat.glmei$nbtot - dat.glmei$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmei <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmei)
+
+summary(glmei)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmei, test="Chi")
+
+```
+
+##### 16. i
+
+```{r, echo=TRUE}
+
+dat.glmi <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "i"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmi$cas_neg <-dat.glmi$nbtot - dat.glmi$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmi <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmi)
+
+summary(glmi)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmi, test="Chi")
+
+```
+
+##### 17. v
+
+```{r, echo=TRUE}
+
+dat.glmv <- stereoE %>% 
+  select(starts_with("scan_id"), starts_with("cell_type"), starts_with("hit_points")) %>% mutate(position=substr(scan_id,nchar(scan_id)-1,nchar(scan_id)-0)) %>% 
+  group_by(scan_id)%>% 
+  mutate(nbtot=sum(hit_points))%>%
+  ungroup()%>%
+  mutate(scan=substr(scan_id,1,nchar(scan_id)-3)) %>%
+  filter(stringr::str_detect(cell_type, "v"))
+
+```
+
+Adding a column with the number of times that the cellular structuce was not counted
+
+```{r, echo=TRUE}
+
+dat.glmv$cas_neg <-dat.glmv$nbtot - dat.glmv$hit_points
+
+```
+
+Model : GLM binomial with a **logit** link
+
+```{r, echo=TRUE}
+
+glmv <- glm(cbind(hit_points, cas_neg) ~ scan + position , family=binomial(link="logit"), data = dat.glmv)
+
+summary(glmv)
+
+```
+
+To get the individual deviances of our variables on our model, a **drop** function is used.
+
+``` {r, echo=TRUE}
+
+drop1(glmv, test="Chi")
+
+```
+
+#### c. PCA
+
+```{r data4, echo=TRUE}
+
+stereoacp<-stereo6%>%tidyr::separate(scan_id,sep=" ",into=paste0("V",1:7),remove=F)%>%
+  tidyr::unite("slide",V1,V2,V3,V4,V5,V6,sep=" ",remove=F)%>%
+  transmute(num_fish,slide,l=V4,w=V5,pos=V7,point_id,coord_x,coord_y,cell_type)
+
+stereoacp<-(stereoacp%>%group_by(num_fish,slide,pos,cell_type)%>%summarise(n=n())%>%group_by(slide,pos)%>%mutate(tot=sum(n))%>%ungroup()%>%mutate(nperc=n/tot))
+
+```
+
+Plot 38 : Count percentage of each cellular structures found in the 6 slides, for 15 fish
+
+```{r plot38, echo=TRUE}
+
+ggplot(data=stereoacp,aes(x=cell_type,y=nperc,fill=pos))+geom_bar(stat="identity",pos="dodge")+facet_wrap(~slide) + xlab("Cellular structures") +
+ylab("Count (%)") +
+theme(axis.text.x = element_text(size=7)) +
+scale_fill_discrete(name="Slide section")
+
+```
+
+Plot 39 : No distinctions between the 90 slides. 95.5% of the variation explained on 2 axis.
+
+```{r plot39, echo=TRUE}
+
+dat<-stereoacp%>%transmute(num_fish,slide,pos,cell_type,n=nperc)%>%tidyr::spread(cell_type,n,fill=0)
+
+dudi1  <-  dudi.pca(dat%>%select(-num_fish,-slide,-pos),  scale  =  F, center  =F, scan  =  FALSE,  nf  =  6)
+fviz_eig(dudi1)
+
+```
+
+Plot 40 : No distinctions between the 90 slides. 95.5% of the variation explained on 2 axis.
+
+```{r plot40, echo=TRUE}
+
+fviz_pca_ind(dudi1,repel=T,addEllipses=T,var=dat$pos)
+
+```
+
+Plot 41 : 95.4% of the variations explained on 2 axis. Good representation of our data.
+
+```{r plot41, echo=TRUE}
+
+fviz_pca_var(dudi1,repel=T) 
+
+```
+
+Plot 42 : PCA Slides
+
+```{r plot42, echo=TRUE}
+
+plot(dudi1$l1[,1:2],col=rainbow(6)[as.numeric(as.factor(dat$pos))])
+s.class(dudi1$l1,fac=as.factor(dat$slide),add.plot=T)
+
+```
+
+Plot 43 : PCA positions
+
+```{r plot43, echo=TRUE}
+
+plot(dudi1$l1[,1:2],col=c("red3","purple4","royalblue3","seagreen","peru","seashell4"))
+
+s.class(dudi1$l1,
+        fac=as.factor(dat$pos),
+        add.plot=T,
+        col=c("red3","purple4","royalblue3","seagreen","peru","seashell4"),
+        cstar = 0,
+        clabel = 0.5)
+
+```
